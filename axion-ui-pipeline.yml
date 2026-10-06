@@ -93,39 +93,25 @@ stages:
     # --------------------------------------------------------
 
     - script: |
-
         echo ==========================================
-        echo Node and NPM Version
+        echo Installing Node dependencies
         echo ==========================================
 
         node --version
         npm --version
 
-        echo.
-        echo ==========================================
-        echo Installing NPM Dependencies
-        echo ==========================================
-
-        npm install --include=dev
+        npm install --include=dev --no-audit --no-fund
 
         echo.
-        echo ==========================================
-        echo Installing TypeScript
-        echo ==========================================
-
-        npm install --no-save --include=dev typescript
+        echo Installing TypeScript explicitly...
+        npm install --save-dev typescript --no-audit --no-fund
 
         echo.
-        echo ==========================================
-        echo Checking TypeScript
-        echo ==========================================
+        echo Checking TypeScript...
+        dir node_modules\typescript\bin
+        dir node_modules\.bin
 
-        if not exist "node_modules\typescript\bin\tsc" (
-            echo ERROR: TypeScript compiler was not installed.
-            exit /b 1
-        )
-
-        node "node_modules\typescript\bin\tsc" --version
+        node node_modules\typescript\bin\tsc --version
 
       displayName: 'NPM Install'
       workingDirectory: '$(frontendFolder)'
@@ -136,28 +122,25 @@ stages:
     # --------------------------------------------------------
 
     - script: |
-
         echo ==========================================
         echo Starting Axion UI Build
         echo ==========================================
 
         if not exist "node_modules\typescript\bin\tsc" (
-            echo ERROR: TypeScript compiler not found.
-            exit /b 1
+          echo ERROR: TypeScript compiler not found.
+          exit /b 1
         )
 
-        echo TypeScript:
-        node "node_modules\typescript\bin\tsc" --version
+        echo TypeScript compiler found.
+        node node_modules\typescript\bin\tsc --version
 
         echo.
-        echo Running TypeScript Build...
-
-        node "node_modules\typescript\bin\tsc" -b
+        echo Running TypeScript build...
+        node node_modules\typescript\bin\tsc -b
 
         echo.
-        echo Running Vite Build...
-
-        npm run build
+        echo Running Vite build...
+        node node_modules\vite\bin\vite.js build
 
       displayName: 'NPM Build'
       workingDirectory: '$(frontendFolder)'
