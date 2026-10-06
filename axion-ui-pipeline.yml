@@ -72,10 +72,10 @@ stages:
     # --------------------------------------------------------
     # 2. Install Node.js
     # --------------------------------------------------------
-    - task: NodeTool@0
+    - task: UseNode@1
       displayName: 'Install Node.js'
       inputs:
-        versionSpec: '$(nodeVersion)'
+        version: '$(nodeVersion)'
 
     # --------------------------------------------------------
     # 3. NPM Install
