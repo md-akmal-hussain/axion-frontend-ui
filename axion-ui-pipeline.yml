@@ -1,0 +1,295 @@
+# ============================================================
+# AXION FRONTEND UI - CI/CD PIPELINE
+# Build -> Publish Artifact -> Deploy to Ubuntu VM
+# ============================================================
+
+name: axion-ui-$(Date:yyyyMMdd).$(Rev:r)
+
+trigger:
+  branches:
+    include:
+      - develop
+      - main
+
+pr:
+  branches:
+    include:
+      - develop
+      - main
+
+variables:
+  nodeVersion: '20.x'
+  frontendFolder: '.'
+  buildFolder: 'dist'
+  artifactName: 'axion-ui-frontend'
+
+  # Existing VM / SSH configuration
+  frontendVmName: 'axion-frontend-vm-01'
+  sshServiceConnection: 'ssh-svc'
+
+  # Nginx web root
+  nginxRoot: '/var/www/html'
+
+
+# ============================================================
+# STAGE 1 - BUILD FRONTEND
+# ============================================================
+
+stages:
+
+- stage: Build_Frontend
+  displayName: 'Build Frontend'
+
+  jobs:
+  - job: Build_Axion_UI
+    displayName: 'Build Axion UI'
+
+    pool:
+      name: 'Yaml_Pool'
+
+    steps:
+
+    # --------------------------------------------------------
+    # Checkout
+    # --------------------------------------------------------
+
+    - checkout: self
+      clean: true
+      displayName: 'Checkout axion-ui'
+
+
+    # --------------------------------------------------------
+    # Install Node.js
+    # --------------------------------------------------------
+
+    - task: UseNode@1
+      displayName: 'Install Node.js'
+      inputs:
+        version: '$(nodeVersion)'
+
+
+    # --------------------------------------------------------
+    # Install Dependencies
+    # NOTE: Windows agent par npm = npm.cmd, isliye "call" zaroori hai.
+    # --------------------------------------------------------
+
+    - script: |
+        node --version
+        call npm --version
+
+        if exist package-lock.json (
+          echo package-lock.json found - running npm ci
+          call npm ci --include=dev
+        ) else (
+          echo package-lock.json not found - running npm install
+          call npm install --include=dev
+        )
+        if errorlevel 1 exit /b 1
+
+        echo Verifying TypeScript is installed...
+        call npx --no-install tsc --version
+        if errorlevel 1 (
+          echo ERROR: typescript not found in node_modules. Check devDependencies in package.json
+          exit /b 1
+        )
+
+      displayName: 'NPM Install'
+      workingDirectory: '$(frontendFolder)'
+
+
+    # --------------------------------------------------------
+    # Build Frontend
+    # --------------------------------------------------------
+
+    - script: |
+        echo Starting Axion UI Build
+
+        call npm run build
+        if errorlevel 1 exit /b 1
+
+      displayName: 'NPM Build'
+      workingDirectory: '$(frontendFolder)'
+
+
+    # --------------------------------------------------------
+    # Verify dist
+    # --------------------------------------------------------
+
+    - powershell: |
+
+        Write-Host "Checking frontend build output..."
+
+        $distPath = "$(Build.SourcesDirectory)\$(buildFolder)"
+
+        if (!(Test-Path $distPath)) {
+            Write-Error "Build folder '$(buildFolder)' was not found."
+            exit 1
+        }
+
+        Write-Host "Build folder found:"
+        Write-Host $distPath
+
+        Get-ChildItem $distPath -Recurse
+
+      displayName: 'Verify Dist Folder'
+
+
+    # --------------------------------------------------------
+    # Prepare Artifact
+    # --------------------------------------------------------
+
+    - task: CopyFiles@2
+      displayName: 'Prepare Frontend Artifact'
+      inputs:
+        SourceFolder: '$(Build.SourcesDirectory)/$(buildFolder)'
+        Contents: '**'
+        TargetFolder: '$(Build.ArtifactStagingDirectory)/$(artifactName)'
+        CleanTargetFolder: true
+
+
+    # --------------------------------------------------------
+    # Publish Artifact
+    # --------------------------------------------------------
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Frontend Artifact'
+      inputs:
+        targetPath: '$(Build.ArtifactStagingDirectory)/$(artifactName)'
+        artifact: '$(artifactName)'
+
+
+# ============================================================
+# STAGE 2 - DEPLOY FRONTEND
+# ============================================================
+
+- stage: Deploy_Frontend
+  displayName: 'Deploy Frontend to Azure VM'
+
+  dependsOn:
+    - Build_Frontend
+
+  # PR build par deploy nahi hoga, sirf push par hoga
+  condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+
+  jobs:
+
+  - job: Deploy_to_Ubuntu_VM
+    displayName: 'Deploy to Ubuntu VM'
+
+    pool:
+      name: 'Yaml_Pool'
+
+    steps:
+
+    # --------------------------------------------------------
+    # No source checkout required
+    # --------------------------------------------------------
+
+    - checkout: none
+
+
+    # --------------------------------------------------------
+    # Download Artifact
+    # --------------------------------------------------------
+
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download Frontend Artifact'
+      inputs:
+        artifact: '$(artifactName)'
+        path: '$(Pipeline.Workspace)/$(artifactName)'
+
+
+    # --------------------------------------------------------
+    # Copy Files to Ubuntu VM
+    # --------------------------------------------------------
+
+    - task: CopyFilesOverSSH@0
+      displayName: 'Copy Frontend to Ubuntu VM'
+      inputs:
+        sshEndpoint: '$(sshServiceConnection)'
+        sourceFolder: '$(Pipeline.Workspace)/$(artifactName)'
+        contents: '**'
+        targetFolder: '/tmp/axion-ui'
+        readyTimeout: '20000'
+        overwrite: true
+        cleanTargetFolder: true
+        failOnEmptySource: true
+
+
+    # --------------------------------------------------------
+    # Deploy to Nginx
+    # --------------------------------------------------------
+
+    - task: SSH@0
+      displayName: 'Deploy Frontend to Nginx'
+      inputs:
+        sshEndpoint: '$(sshServiceConnection)'
+        runOptions: 'inline'
+
+        inline: |
+
+          set -e
+
+          NGINX_BIN=/usr/sbin/nginx
+
+          echo "=========================================="
+          echo "Deploying Axion UI"
+          echo "VM: $(frontendVmName)"
+          echo "=========================================="
+
+          echo "Checking uploaded files..."
+          ls -la /tmp/axion-ui
+
+          echo "Checking Nginx installation..."
+          if [ ! -x "$NGINX_BIN" ]; then
+            echo "Nginx not found - installing..."
+            sudo apt-get update -y
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=300 nginx
+          else
+            echo "Nginx already installed"
+          fi
+
+          echo "Enabling and starting Nginx..."
+          sudo systemctl enable nginx
+          sudo systemctl start nginx
+          sudo "$NGINX_BIN" -v
+
+          echo "Creating Nginx directory..."
+          sudo mkdir -p $(nginxRoot)
+
+          echo "Creating backup..."
+          sudo rm -rf /var/backups/axion-ui/latest
+          sudo mkdir -p /var/backups/axion-ui/latest
+          sudo cp -a $(nginxRoot)/. /var/backups/axion-ui/latest/ || true
+
+          echo "Removing old frontend..."
+          sudo rm -rf $(nginxRoot)/*
+
+          echo "Copying new frontend..."
+          sudo cp -a /tmp/axion-ui/. $(nginxRoot)/
+
+          echo "Setting permissions..."
+          sudo chown -R www-data:www-data $(nginxRoot)
+          sudo chmod -R 755 $(nginxRoot)
+
+          echo "Testing Nginx config..."
+          sudo "$NGINX_BIN" -t
+
+          echo "Reloading Nginx..."
+          sudo systemctl reload nginx
+
+          echo "Checking Nginx..."
+          sudo systemctl is-active nginx
+
+          echo "Smoke test on localhost..."
+          curl -sI http://localhost | head -n 1 || true
+
+          echo "=========================================="
+          echo "Axion UI deployment completed successfully"
+          echo "=========================================="
+
+          echo "Cleaning temporary files..."
+          sudo rm -rf /tmp/axion-ui
+
+        readyTimeout: '20000'
+        failOnStdErr: false
