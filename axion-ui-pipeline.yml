@@ -84,7 +84,10 @@ stages:
         node --version
         npm --version
 
-        npm install
+        npm install --include=dev
+
+        echo "Checking TypeScript..."
+        npx tsc --version
       displayName: 'NPM Install'
       workingDirectory: '$(frontendFolder)'
 
@@ -124,22 +127,6 @@ stages:
         Contents: '**'
         TargetFolder: '$(Build.ArtifactStagingDirectory)/$(artifactName)'
         CleanTargetFolder: true
-
-    # # --------------------------------------------------------
-    # # 7. Publish Frontend Artifact
-    # # --------------------------------------------------------
-    # - task: PublishPipelineArtifact@1
-    #   displayName: 'Publish Frontend Artifact'
-    #   inputs:
-    #     targetPath: '$(Build.ArtifactStagingDirectory)/$(artifactName)'
-    #     artifact: '$(artifactName)'
-
-    # # --------------------------------------------------------
-    # # Post Job Checkout
-    # # --------------------------------------------------------
-    # - checkout: self
-    #   displayName: 'Post-job Checkout'
-
 
 # ============================================================
 # STAGE 2 - DEPLOY FRONTEND TO AZURE VM
