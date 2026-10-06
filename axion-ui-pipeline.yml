@@ -121,10 +121,29 @@ stages:
     # 4. NPM Build
     # --------------------------------------------------------
 
-    - task: Npm@1
-      inputs:
-        command: 'custom'
-        customCommand: 'run build'
+    - script: |
+        echo ==========================================
+        echo Starting Axion UI Build
+        echo ==========================================
+
+        if not exist "node_modules\typescript\bin\tsc" (
+          echo ERROR: TypeScript compiler not found.
+          exit /b 1
+        )
+
+        echo TypeScript compiler found.
+        node node_modules\typescript\bin\tsc --version
+
+        echo.
+        echo Running TypeScript build...
+        node node_modules\typescript\bin\tsc -b
+
+        echo.
+        echo Running Vite build...
+        node node_modules\vite\bin\vite.js build
+
+      displayName: 'NPM Build'
+      workingDirectory: '$(frontendFolder)'
 
 
     # --------------------------------------------------------
