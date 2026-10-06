@@ -71,7 +71,6 @@ stages:
     # --------------------------------------------------------
     # Install Dependencies
     # NOTE: Windows agent par npm = npm.cmd, isliye "call" zaroori hai.
-    # Bina "call" ke batch file npm ke baad wahin khatam ho jaati hai.
     # --------------------------------------------------------
 
     - script: |
@@ -231,6 +230,8 @@ stages:
 
           set -e
 
+          NGINX_BIN=/usr/sbin/nginx
+
           echo "=========================================="
           echo "Deploying Axion UI"
           echo "VM: $(frontendVmName)"
@@ -238,6 +239,20 @@ stages:
 
           echo "Checking uploaded files..."
           ls -la /tmp/axion-ui
+
+          echo "Checking Nginx installation..."
+          if [ ! -x "$NGINX_BIN" ]; then
+            echo "Nginx not found - installing..."
+            sudo apt-get update -y
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=300 nginx
+          else
+            echo "Nginx already installed"
+          fi
+
+          echo "Enabling and starting Nginx..."
+          sudo systemctl enable nginx
+          sudo systemctl start nginx
+          sudo "$NGINX_BIN" -v
 
           echo "Creating Nginx directory..."
           sudo mkdir -p $(nginxRoot)
@@ -257,14 +272,17 @@ stages:
           sudo chown -R www-data:www-data $(nginxRoot)
           sudo chmod -R 755 $(nginxRoot)
 
-          echo "Testing Nginx..."
-          sudo nginx -t
+          echo "Testing Nginx config..."
+          sudo "$NGINX_BIN" -t
 
           echo "Reloading Nginx..."
           sudo systemctl reload nginx
 
           echo "Checking Nginx..."
           sudo systemctl is-active nginx
+
+          echo "Smoke test on localhost..."
+          curl -sI http://localhost | head -n 1 || true
 
           echo "=========================================="
           echo "Axion UI deployment completed successfully"
