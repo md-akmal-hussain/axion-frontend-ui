@@ -1,69 +1,48 @@
 # ============================================================
-# AXION UI - FRONTEND CI/CD PIPELINE
-# Build Frontend -> Publish Artifact -> Deploy to Azure VM
+# AXION FRONTEND UI - CI/CD PIPELINE
+# Build -> Publish Artifact -> Deploy to Ubuntu VM
 # ============================================================
 
 name: axion-ui-$(Date:yyyyMMdd).$(Rev:r)
 
-# ============================================================
-# TRIGGER
-# ============================================================
-
 trigger:
   branches:
     include:
-      - main
       - develop
+      - main
 
 pr:
   branches:
     include:
-      - main
       - develop
-
-
-# ============================================================
-# VARIABLES
-# ============================================================
+      - main
 
 variables:
-
-  # Node / Frontend
   nodeVersion: '20.x'
   frontendFolder: '.'
   buildFolder: 'dist'
+  artifactName: 'axion-ui-frontend'
 
-  # Artifact
-  artifactName: 'axion-frontend-vm-01'
-
-  # Azure VM
-  frontendVmName: 'Exion-frontend-VM-01'
-
-  # SSH Service Connection
+  # Existing VM / SSH configuration
+  frontendVmName: 'axion-frontend-vm-01'
   sshServiceConnection: 'ssh-svc'
 
-  # Nginx
+  # Nginx web root
   nginxRoot: '/var/www/html'
-
-
-# ============================================================
-# STAGES
-# ============================================================
-
-stages:
 
 
 # ============================================================
 # STAGE 1 - BUILD FRONTEND
 # ============================================================
 
+stages:
+
 - stage: Build_Frontend
   displayName: 'Build Frontend'
 
   jobs:
-
   - job: Build_Axion_UI
-    displayName: 'Build Axion UI JOB'
+    displayName: 'Build Axion UI'
 
     pool:
       name: 'Yaml_Pool'
@@ -71,7 +50,7 @@ stages:
     steps:
 
     # --------------------------------------------------------
-    # 1. Checkout Source Code
+    # Checkout
     # --------------------------------------------------------
 
     - checkout: self
@@ -79,7 +58,7 @@ stages:
 
 
     # --------------------------------------------------------
-    # 2. Install Node.js
+    # Install Node.js
     # --------------------------------------------------------
 
     - task: UseNode@1
@@ -89,107 +68,49 @@ stages:
 
 
     # --------------------------------------------------------
-    # 3. NPM Install
+    # Install Dependencies
     # --------------------------------------------------------
 
     - script: |
-        echo ==========================================
-        echo INSTALLING FRONTEND DEPENDENCIES
-        echo ==========================================
-
         node --version
         npm --version
 
-        echo.
-        echo Current directory:
-        cd
-
-        echo.
-        echo Files:
-        dir
-
-        echo.
-        echo Installing dependencies...
-        npm install --include=dev --verbose
-
-        echo.
-        echo Installing TypeScript explicitly...
-        npm install typescript@latest --save-dev --verbose
-
-        echo.
-        echo ==========================================
-        echo VERIFYING TYPESCRIPT
-        echo ==========================================
-
-        if exist "node_modules\typescript\bin\tsc" (
-            echo TypeScript package FOUND
-        ) else (
-            echo ERROR: TypeScript package NOT FOUND
-            echo.
-            echo Checking node_modules...
-            dir node_modules
-            exit /b 1
-        )
-
-        node node_modules\typescript\bin\tsc --version
+        npm install --include=dev
 
       displayName: 'NPM Install'
       workingDirectory: '$(frontendFolder)'
 
 
     # --------------------------------------------------------
-    # 4. NPM Build
+    # Build Frontend
     # --------------------------------------------------------
 
     - script: |
-        echo ==========================================
-        echo STARTING AXION UI BUILD
-        echo ==========================================
+        echo "Starting Axion UI Build"
 
-        if not exist "node_modules\typescript\bin\tsc" (
-            echo ERROR: TypeScript compiler not found.
-            exit /b 1
-        )
-
-        echo TypeScript compiler found.
-        node node_modules\typescript\bin\tsc --version
-
-        echo.
-        echo Running TypeScript build...
-        node node_modules\typescript\bin\tsc -b
-
-        echo.
-        echo Running Vite build...
-        node node_modules\vite\bin\vite.js build
+        npm run build
 
       displayName: 'NPM Build'
       workingDirectory: '$(frontendFolder)'
 
 
     # --------------------------------------------------------
-    # 5. Verify Dist Folder
+    # Verify dist
     # --------------------------------------------------------
 
     - powershell: |
 
-        Write-Host "=========================================="
-        Write-Host "Checking Frontend Build Output"
-        Write-Host "=========================================="
+        Write-Host "Checking frontend build output..."
 
         $distPath = "$(Build.SourcesDirectory)\$(buildFolder)"
 
         if (!(Test-Path $distPath)) {
-
-            Write-Error "Build folder '$distPath' was not found."
-
+            Write-Error "Build folder '$(buildFolder)' was not found."
             exit 1
         }
 
         Write-Host "Build folder found:"
         Write-Host $distPath
-
-        Write-Host ""
-        Write-Host "Build files:"
 
         Get-ChildItem $distPath -Recurse
 
@@ -197,37 +118,31 @@ stages:
 
 
     # --------------------------------------------------------
-    # 6. Prepare Frontend Artifact
+    # Prepare Artifact
     # --------------------------------------------------------
 
     - task: CopyFiles@2
       displayName: 'Prepare Frontend Artifact'
       inputs:
-
         SourceFolder: '$(Build.SourcesDirectory)/$(buildFolder)'
-
         Contents: '**'
-
         TargetFolder: '$(Build.ArtifactStagingDirectory)/$(artifactName)'
-
         CleanTargetFolder: true
 
 
     # --------------------------------------------------------
-    # 7. Publish Frontend Artifact
+    # Publish Artifact
     # --------------------------------------------------------
 
     - task: PublishPipelineArtifact@1
       displayName: 'Publish Frontend Artifact'
       inputs:
-
         targetPath: '$(Build.ArtifactStagingDirectory)/$(artifactName)'
-
         artifact: '$(artifactName)'
 
 
 # ============================================================
-# STAGE 2 - DEPLOY FRONTEND TO AZURE VM
+# STAGE 2 - DEPLOY FRONTEND
 # ============================================================
 
 - stage: Deploy_Frontend
@@ -248,63 +163,49 @@ stages:
 
     steps:
 
-
     # --------------------------------------------------------
-    # 1. No Source Checkout Required
+    # No source checkout required
     # --------------------------------------------------------
 
     - checkout: none
-      displayName: 'Skip Source Checkout'
 
 
     # --------------------------------------------------------
-    # 2. Download Frontend Artifact
+    # Download Artifact
     # --------------------------------------------------------
 
     - task: DownloadPipelineArtifact@2
       displayName: 'Download Frontend Artifact'
       inputs:
-
         artifact: '$(artifactName)'
-
         path: '$(Pipeline.Workspace)/$(artifactName)'
 
 
     # --------------------------------------------------------
-    # 3. Copy Frontend Artifact to Azure VM
+    # Copy Files to Ubuntu VM
     # --------------------------------------------------------
 
     - task: CopyFilesOverSSH@0
-      displayName: 'Copy Frontend Artifact to VM'
+      displayName: 'Copy Frontend to Ubuntu VM'
       inputs:
-
         sshEndpoint: '$(sshServiceConnection)'
-
         sourceFolder: '$(Pipeline.Workspace)/$(artifactName)'
-
         contents: '**'
-
         targetFolder: '/tmp/axion-ui'
-
         readyTimeout: '20000'
-
         overwrite: true
-
         cleanTargetFolder: true
-
         failOnEmptySource: true
 
 
     # --------------------------------------------------------
-    # 4. Deploy Frontend to Nginx
+    # Deploy to Nginx
     # --------------------------------------------------------
 
     - task: SSH@0
       displayName: 'Deploy Frontend to Nginx'
       inputs:
-
         sshEndpoint: '$(sshServiceConnection)'
-
         runOptions: 'inline'
 
         inline: |
@@ -316,70 +217,41 @@ stages:
           echo "VM: $(frontendVmName)"
           echo "=========================================="
 
-
           echo "Checking uploaded files..."
-
           ls -la /tmp/axion-ui
 
-
-          echo "Creating Nginx root directory..."
-
+          echo "Creating Nginx directory..."
           sudo mkdir -p $(nginxRoot)
 
+          echo "Creating backup..."
+          sudo mkdir -p /var/backups/axion-ui/latest
+          sudo cp -a $(nginxRoot)/. /var/backups/axion-ui/latest/ || true
 
-          echo "Creating backup directory..."
-
-          sudo mkdir -p /var/backups/axion-ui
-
-
-          echo "Backing up current frontend..."
-
-          sudo rm -rf /var/backups/axion-ui/latest
-
-          sudo cp -a $(nginxRoot) /var/backups/axion-ui/latest
-
-
-          echo "Cleaning old frontend files..."
-
+          echo "Removing old frontend..."
           sudo rm -rf $(nginxRoot)/*
 
-
-          echo "Copying new frontend files..."
-
+          echo "Copying new frontend..."
           sudo cp -a /tmp/axion-ui/. $(nginxRoot)/
 
-
           echo "Setting permissions..."
-
           sudo chown -R www-data:www-data $(nginxRoot)
-
           sudo chmod -R 755 $(nginxRoot)
 
-
-          echo "Testing Nginx configuration..."
-
+          echo "Testing Nginx..."
           sudo nginx -t
 
-
           echo "Reloading Nginx..."
-
           sudo systemctl reload nginx
 
-
-          echo "Checking Nginx status..."
-
+          echo "Checking Nginx..."
           sudo systemctl is-active nginx
-
 
           echo "=========================================="
           echo "Axion UI deployment completed successfully"
           echo "=========================================="
 
-
           echo "Cleaning temporary files..."
-
           sudo rm -rf /tmp/axion-ui
 
         readyTimeout: '20000'
-
         failOnStdErr: false
