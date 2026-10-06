@@ -125,20 +125,20 @@ stages:
         TargetFolder: '$(Build.ArtifactStagingDirectory)/$(artifactName)'
         CleanTargetFolder: true
 
-    # --------------------------------------------------------
-    # 7. Publish Frontend Artifact
-    # --------------------------------------------------------
-    - task: PublishPipelineArtifact@1
-      displayName: 'Publish Frontend Artifact'
-      inputs:
-        targetPath: '$(Build.ArtifactStagingDirectory)/$(artifactName)'
-        artifact: '$(artifactName)'
+    # # --------------------------------------------------------
+    # # 7. Publish Frontend Artifact
+    # # --------------------------------------------------------
+    # - task: PublishPipelineArtifact@1
+    #   displayName: 'Publish Frontend Artifact'
+    #   inputs:
+    #     targetPath: '$(Build.ArtifactStagingDirectory)/$(artifactName)'
+    #     artifact: '$(artifactName)'
 
-    # --------------------------------------------------------
-    # Post Job Checkout
-    # --------------------------------------------------------
-    - checkout: self
-      displayName: 'Post-job Checkout'
+    # # --------------------------------------------------------
+    # # Post Job Checkout
+    # # --------------------------------------------------------
+    # - checkout: self
+    #   displayName: 'Post-job Checkout'
 
 
 # ============================================================
