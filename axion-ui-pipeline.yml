@@ -137,7 +137,7 @@ stages:
     # --------------------------------------------------------
     # Post Job Checkout
     # --------------------------------------------------------
-    - checkout: none
+    - checkout: self
       displayName: 'Post-job Checkout'
 
 
