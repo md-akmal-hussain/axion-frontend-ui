@@ -54,6 +54,7 @@ stages:
     # --------------------------------------------------------
 
     - checkout: self
+      clean: true
       displayName: 'Checkout axion-ui'
 
 
@@ -69,13 +70,29 @@ stages:
 
     # --------------------------------------------------------
     # Install Dependencies
+    # NOTE: Windows agent par npm = npm.cmd, isliye "call" zaroori hai.
+    # Bina "call" ke batch file npm ke baad wahin khatam ho jaati hai.
     # --------------------------------------------------------
 
     - script: |
         node --version
-        npm --version
+        call npm --version
 
-        npm install --include=dev
+        if exist package-lock.json (
+          echo package-lock.json found - running npm ci
+          call npm ci --include=dev
+        ) else (
+          echo package-lock.json not found - running npm install
+          call npm install --include=dev
+        )
+        if errorlevel 1 exit /b 1
+
+        echo Verifying TypeScript is installed...
+        call npx --no-install tsc --version
+        if errorlevel 1 (
+          echo ERROR: typescript not found in node_modules. Check devDependencies in package.json
+          exit /b 1
+        )
 
       displayName: 'NPM Install'
       workingDirectory: '$(frontendFolder)'
@@ -86,9 +103,10 @@ stages:
     # --------------------------------------------------------
 
     - script: |
-        echo "Starting Axion UI Build"
+        echo Starting Axion UI Build
 
-        npm run build
+        call npm run build
+        if errorlevel 1 exit /b 1
 
       displayName: 'NPM Build'
       workingDirectory: '$(frontendFolder)'
@@ -151,7 +169,8 @@ stages:
   dependsOn:
     - Build_Frontend
 
-  condition: succeeded()
+  # PR build par deploy nahi hoga, sirf push par hoga
+  condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
 
   jobs:
 
@@ -224,6 +243,7 @@ stages:
           sudo mkdir -p $(nginxRoot)
 
           echo "Creating backup..."
+          sudo rm -rf /var/backups/axion-ui/latest
           sudo mkdir -p /var/backups/axion-ui/latest
           sudo cp -a $(nginxRoot)/. /var/backups/axion-ui/latest/ || true
 
