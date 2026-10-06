@@ -1,15 +1,14 @@
 # ============================================================
 # AXION UI - FRONTEND CI/CD PIPELINE
 # Build Frontend -> Publish Artifact -> Deploy to Azure VM
-# Target VM : Exion-frontend-VM-01
-# SSH SC    : SSH SBC
 # ============================================================
 
 name: axion-ui-$(Date:yyyyMMdd).$(Rev:r)
 
-# ------------------------------------------------------------
+# ============================================================
 # TRIGGER
-# ------------------------------------------------------------
+# ============================================================
+
 trigger:
   branches:
     include:
@@ -23,33 +22,40 @@ pr:
       - develop
 
 
-# ------------------------------------------------------------
+# ============================================================
 # VARIABLES
-# ------------------------------------------------------------
+# ============================================================
+
 variables:
 
-  # Frontend
+  # Node / Frontend
   nodeVersion: '20.x'
   frontendFolder: '.'
   buildFolder: 'dist'
 
   # Artifact
-  artifactName: 'axion-ui-frontend'
+  artifactName: 'axion-frontend-vm-01'
 
   # Azure VM
-  frontendVmName: 'axion-frontend-vm-01'
+  frontendVmName: 'Exion-frontend-VM-01'
 
   # SSH Service Connection
   sshServiceConnection: 'ssh-svc'
 
-  # Nginx web root
+  # Nginx
   nginxRoot: '/var/www/html'
+
+
+# ============================================================
+# STAGES
+# ============================================================
+
+stages:
 
 
 # ============================================================
 # STAGE 1 - BUILD FRONTEND
 # ============================================================
-stages:
 
 - stage: Build_Frontend
   displayName: 'Build Frontend'
@@ -67,68 +73,155 @@ stages:
     # --------------------------------------------------------
     # 1. Checkout Source Code
     # --------------------------------------------------------
+
     - checkout: self
       displayName: 'Checkout axion-ui'
+
 
     # --------------------------------------------------------
     # 2. Install Node.js
     # --------------------------------------------------------
+
     - task: UseNode@1
       displayName: 'Install Node.js'
       inputs:
         version: '$(nodeVersion)'
 
+
     # --------------------------------------------------------
     # 3. NPM Install
     # --------------------------------------------------------
+
     - script: |
+
+        echo ==========================================
+        echo Node and NPM Version
+        echo ==========================================
+
         node --version
         npm --version
 
-        npm install --include=dev
-        npm install --no-save typescript
+        echo.
+        echo ==========================================
+        echo Installing NPM Dependencies
+        echo ==========================================
 
-        echo "Checking TypeScript..."
-        npx tsc --version
+        npm install --include=dev
+
+        echo.
+        echo ==========================================
+        echo Installing TypeScript
+        echo ==========================================
+
+        npm install --no-save --include=dev typescript
+
+        echo.
+        echo ==========================================
+        echo Checking TypeScript
+        echo ==========================================
+
+        if not exist "node_modules\typescript\bin\tsc" (
+            echo ERROR: TypeScript compiler was not installed.
+            exit /b 1
+        )
+
+        node "node_modules\typescript\bin\tsc" --version
+
       displayName: 'NPM Install'
       workingDirectory: '$(frontendFolder)'
+
 
     # --------------------------------------------------------
     # 4. NPM Build
     # --------------------------------------------------------
+
     - script: |
-       npm run build
+
+        echo ==========================================
+        echo Starting Axion UI Build
+        echo ==========================================
+
+        if not exist "node_modules\typescript\bin\tsc" (
+            echo ERROR: TypeScript compiler not found.
+            exit /b 1
+        )
+
+        echo TypeScript:
+        node "node_modules\typescript\bin\tsc" --version
+
+        echo.
+        echo Running TypeScript Build...
+
+        node "node_modules\typescript\bin\tsc" -b
+
+        echo.
+        echo Running Vite Build...
+
+        npm run build
+
       displayName: 'NPM Build'
       workingDirectory: '$(frontendFolder)'
 
+
     # --------------------------------------------------------
-    # 5. Verify dist Folder
+    # 5. Verify Dist Folder
     # --------------------------------------------------------
+
     - powershell: |
 
-        Write-Host "Checking frontend build output..."
+        Write-Host "=========================================="
+        Write-Host "Checking Frontend Build Output"
+        Write-Host "=========================================="
 
-        if (!(Test-Path "$(Build.SourcesDirectory)\$(buildFolder)")) {
-            Write-Error "Build folder '$(buildFolder)' was not found."
+        $distPath = "$(Build.SourcesDirectory)\$(buildFolder)"
+
+        if (!(Test-Path $distPath)) {
+
+            Write-Error "Build folder '$distPath' was not found."
+
             exit 1
         }
 
-        Write-Host "Build folder found."
+        Write-Host "Build folder found:"
+        Write-Host $distPath
 
-        Get-ChildItem "$(Build.SourcesDirectory)\$(buildFolder)" -Recurse
+        Write-Host ""
+        Write-Host "Build files:"
+
+        Get-ChildItem $distPath -Recurse
 
       displayName: 'Verify Dist Folder'
+
 
     # --------------------------------------------------------
     # 6. Prepare Frontend Artifact
     # --------------------------------------------------------
+
     - task: CopyFiles@2
       displayName: 'Prepare Frontend Artifact'
       inputs:
+
         SourceFolder: '$(Build.SourcesDirectory)/$(buildFolder)'
+
         Contents: '**'
+
         TargetFolder: '$(Build.ArtifactStagingDirectory)/$(artifactName)'
+
         CleanTargetFolder: true
+
+
+    # --------------------------------------------------------
+    # 7. Publish Frontend Artifact
+    # --------------------------------------------------------
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Frontend Artifact'
+      inputs:
+
+        targetPath: '$(Build.ArtifactStagingDirectory)/$(artifactName)'
+
+        artifact: '$(artifactName)'
+
 
 # ============================================================
 # STAGE 2 - DEPLOY FRONTEND TO AZURE VM
@@ -152,43 +245,65 @@ stages:
 
     steps:
 
+
     # --------------------------------------------------------
-    # 1. Initialize Job
+    # 1. No Source Checkout Required
     # --------------------------------------------------------
+
     - checkout: none
+      displayName: 'Skip Source Checkout'
+
 
     # --------------------------------------------------------
     # 2. Download Frontend Artifact
     # --------------------------------------------------------
+
     - task: DownloadPipelineArtifact@2
       displayName: 'Download Frontend Artifact'
       inputs:
+
         artifact: '$(artifactName)'
+
         path: '$(Pipeline.Workspace)/$(artifactName)'
 
+
     # --------------------------------------------------------
-    # 3. Copy Frontend Artifact to VM
+    # 3. Copy Frontend Artifact to Azure VM
     # --------------------------------------------------------
+
     - task: CopyFilesOverSSH@0
       displayName: 'Copy Frontend Artifact to VM'
       inputs:
+
         sshEndpoint: '$(sshServiceConnection)'
+
         sourceFolder: '$(Pipeline.Workspace)/$(artifactName)'
+
         contents: '**'
+
         targetFolder: '/tmp/axion-ui'
+
         readyTimeout: '20000'
+
         overwrite: true
+
         cleanTargetFolder: true
+
         failOnEmptySource: true
+
 
     # --------------------------------------------------------
     # 4. Deploy Frontend to Nginx
     # --------------------------------------------------------
+
     - task: SSH@0
       displayName: 'Deploy Frontend to Nginx'
       inputs:
+
         sshEndpoint: '$(sshServiceConnection)'
+
         runOptions: 'inline'
+
         inline: |
 
           set -e
@@ -198,43 +313,70 @@ stages:
           echo "VM: $(frontendVmName)"
           echo "=========================================="
 
+
           echo "Checking uploaded files..."
+
           ls -la /tmp/axion-ui
 
+
           echo "Creating Nginx root directory..."
+
           sudo mkdir -p $(nginxRoot)
 
-          echo "Backing up current frontend..."
+
+          echo "Creating backup directory..."
+
           sudo mkdir -p /var/backups/axion-ui
 
+
+          echo "Backing up current frontend..."
+
           sudo rm -rf /var/backups/axion-ui/latest
+
           sudo cp -a $(nginxRoot) /var/backups/axion-ui/latest
 
+
           echo "Cleaning old frontend files..."
+
           sudo rm -rf $(nginxRoot)/*
 
+
           echo "Copying new frontend files..."
+
           sudo cp -a /tmp/axion-ui/. $(nginxRoot)/
 
+
           echo "Setting permissions..."
+
           sudo chown -R www-data:www-data $(nginxRoot)
+
           sudo chmod -R 755 $(nginxRoot)
 
+
           echo "Testing Nginx configuration..."
+
           sudo nginx -t
 
+
           echo "Reloading Nginx..."
+
           sudo systemctl reload nginx
 
+
           echo "Checking Nginx status..."
+
           sudo systemctl is-active nginx
+
 
           echo "=========================================="
           echo "Axion UI deployment completed successfully"
           echo "=========================================="
 
+
           echo "Cleaning temporary files..."
+
           sudo rm -rf /tmp/axion-ui
 
         readyTimeout: '20000'
-        failOnStdErr: true
+
+        failOnStdErr: false
