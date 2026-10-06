@@ -20,6 +20,7 @@ pr:
   branches:
     include:
       - main
+      - develop
 
 
 # ------------------------------------------------------------
@@ -96,7 +97,7 @@ stages:
     # 4. NPM Build
     # --------------------------------------------------------
     - script: |
-        npm run build
+       npm run build
       displayName: 'NPM Build'
       workingDirectory: '$(frontendFolder)'
 
