@@ -85,6 +85,7 @@ stages:
         npm --version
 
         npm install --include=dev
+        npm install --no-save typescript
 
         echo "Checking TypeScript..."
         npx tsc --version
