@@ -80,7 +80,7 @@ stages:
 
           sudo mkdir -p $(nginxRoot)
           sudo rm -rf $(nginxRoot)/*
-          sudo cp -a /tmp/axion-ui/. $(nginxRoot/)
+          sudo cp -a /tmp/axion-ui/. $(nginxRoot)/
           sudo chown -R www-data:www-data $(nginxRoot)
           sudo chmod -R 755 $(nginxRoot)
 
@@ -88,4 +88,5 @@ stages:
           sudo systemctl reload nginx
 
           sudo rm -rf /tmp/axion-ui
-      failOnStdErr: false
+
+        failOnStdErr: false
