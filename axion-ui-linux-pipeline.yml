@@ -39,7 +39,7 @@ stages:
       displayName: 'Publish Frontend Artifact'
 
 
-# ---------------- STAGE 2: DEPLOY ---------------
+# ---------------- STAGE 2: DEPLOY ----------------
 - stage: Deploy_Frontend
   displayName: 'Deploy Frontend to Azure VM'
   dependsOn: Build_Frontend
