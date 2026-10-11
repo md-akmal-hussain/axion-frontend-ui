@@ -1,0 +1,92 @@
+name: axion-ui-frontend-vm-$(Date:yyyyMMdd).$(Rev:r)
+
+trigger:
+  branches:
+    include:
+      - develop
+      - main
+
+variables:
+  artifactName: 'axion-ui-frontend'
+  sshServiceConnection: 'ssh-svc'
+  nginxRoot: '/var/www/html'
+
+stages:
+
+# ---------------- STAGE 1: BUILD ----------------
+- stage: Build_Frontend
+  displayName: 'Build Frontend'
+  jobs:
+  - job: Build_Axion_UI
+    displayName: 'Build Axion UI'
+    pool:
+      name: 'Yaml_Pool'
+    steps:
+
+    - task: UseNode@1
+      displayName: 'Install Node.js'
+      inputs:
+        version: '20.x'
+
+    - script: |
+        set -e
+        npm install --include=dev
+        npm run build
+      displayName: 'NPM Install and Build'
+
+    - publish: $(Build.SourcesDirectory)/dist
+      artifact: $(artifactName)
+      displayName: 'Publish Frontend Artifact'
+
+
+# ---------------- STAGE 2: DEPLOY ----------------
+- stage: Deploy_Frontend
+  displayName: 'Deploy Frontend to Azure VM'
+  dependsOn: Build_Frontend
+  jobs:
+  - job: Deploy_to_Ubuntu_VM
+    displayName: 'Deploy to Ubuntu VM'
+    pool:
+      name: 'Yaml_Pool'
+    steps:
+
+    - download: current
+      artifact: $(artifactName)
+      displayName: 'Download Frontend Artifact'
+
+    - task: CopyFilesOverSSH@0
+      displayName: 'Copy Frontend to Ubuntu VM'
+      inputs:
+        sshEndpoint: '$(sshServiceConnection)'
+        sourceFolder: '$(Pipeline.Workspace)/$(artifactName)'
+        contents: '**'
+        targetFolder: '/tmp/axion-ui'
+        cleanTargetFolder: true
+
+    - task: SSH@0
+      displayName: 'Deploy Frontend to Nginx'
+      inputs:
+        sshEndpoint: '$(sshServiceConnection)'
+        runOptions: 'inline'
+        inline: |
+          set -e
+
+          if [ ! -x /usr/sbin/nginx ]; then
+            sudo apt-get update -y
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -o DPkg::Lock::Timeout=300 nginx
+          fi
+
+          sudo systemctl enable --now nginx
+
+          sudo mkdir -p $(nginxRoot)
+          sudo rm -rf $(nginxRoot)/*
+          sudo cp -a /tmp/axion-ui/. $(nginxRoot)/
+          sudo chown -R www-data:www-data $(nginxRoot)
+          sudo chmod -R 755 $(nginxRoot)
+
+          sudo /usr/sbin/nginx -t
+          sudo systemctl reload nginx
+
+          sudo rm -rf /tmp/axion-ui
+
+        failOnStdErr: false
